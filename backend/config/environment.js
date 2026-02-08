@@ -51,8 +51,8 @@ const config = {
     },
 
     rateLimit: {
-        windowMs: 1 * 60 * 1000, // 1 minute
-        max: 1000, // limit each IP to 1000 requests per windowMs
+        windowMs: 1 * 60 * 1000,
+        max: 10000, // Very high limit for simulation testing
     },
 
     logging: {

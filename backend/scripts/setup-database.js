@@ -25,7 +25,7 @@ async function setupDatabase() {
     // 1. PARKING LOTS COLLECTION
     // ========================================
     console.log('\n📍 Creating ParkingLots collection...');
-    
+
     await db.createCollection('parking_lots', {
       validator: {
         $jsonSchema: {
@@ -63,13 +63,17 @@ async function setupDatabase() {
             pricing: {
               bsonType: 'object',
               properties: {
-                hourlyRate: { bsonType: 'double', minimum: 0 },
+                hourlyRate: { bsonType: ['double', 'int'], minimum: 0 },
                 currency: { bsonType: 'string', enum: ['USD', 'EUR', 'BDT'] }
               }
             },
             status: {
               bsonType: 'string',
               enum: ['active', 'maintenance', 'closed']
+            },
+            trafficCondition: {
+              bsonType: 'string',
+              enum: ['low', 'medium', 'heavy']
             },
             createdAt: { bsonType: 'date' },
             updatedAt: { bsonType: 'date' }
@@ -91,7 +95,7 @@ async function setupDatabase() {
     // 2. PARKING SLOTS COLLECTION
     // ========================================
     console.log('\n🅿️  Creating ParkingSlots collection...');
-    
+
     await db.createCollection('parking_slots', {
       validator: {
         $jsonSchema: {
@@ -153,7 +157,7 @@ async function setupDatabase() {
     // 3. RESERVATIONS COLLECTION
     // ========================================
     console.log('\n📅 Creating Reservations collection...');
-    
+
     await db.createCollection('reservations', {
       validator: {
         $jsonSchema: {
@@ -200,7 +204,7 @@ async function setupDatabase() {
     // 4. VEHICLE ENTRIES COLLECTION
     // ========================================
     console.log('\n🚗 Creating VehicleEntries collection...');
-    
+
     await db.createCollection('vehicle_entries', {
       validator: {
         $jsonSchema: {
@@ -244,7 +248,7 @@ async function setupDatabase() {
     // 5. USERS COLLECTION
     // ========================================
     console.log('\n👤 Creating Users collection...');
-    
+
     await db.createCollection('users', {
       validator: {
         $jsonSchema: {
@@ -296,7 +300,7 @@ async function setupDatabase() {
     // 6. AI EVENT LOGS COLLECTION
     // ========================================
     console.log('\n🤖 Creating AIEventLogs collection...');
-    
+
     await db.createCollection('ai_event_logs', {
       validator: {
         $jsonSchema: {
@@ -352,12 +356,12 @@ async function setupDatabase() {
     console.log('  4. vehicle_entries   - Vehicle entry/exit logs');
     console.log('  5. users             - User accounts');
     console.log('  6. ai_event_logs     - AI detection events (30-day retention)');
-    
+
     console.log('\n📈 Indexes Created: 24 total');
     console.log('  - Geospatial index on parking_lots.location');
     console.log('  - Compound indexes for efficient queries');
     console.log('  - TTL index on ai_event_logs (auto-delete after 30 days)');
-    
+
     console.log('\n🎯 Next Steps:');
     console.log('  1. Run: node scripts/seed-data.js (to add sample data)');
     console.log('  2. Start your backend server');

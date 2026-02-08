@@ -140,18 +140,21 @@ class SmartParkingManager {
 
     async updatePricing(lot) {
         const slots = this.slotsMap.get(lot._id) || [];
+        // Even if no slots, we might want to update pricing if we had data? 
+        // But for now, if no slots, we assume inactive.
         if (slots.length === 0) return;
 
         const occupied = slots.filter(s => s.status === 'occupied' || s.status === 'reserved').length;
         const occupancyRate = occupied / slots.length;
 
         let newRate = lot.hourlyRate || BASE_RATE;
+        if (typeof newRate !== 'number') newRate = BASE_RATE;
+
         let changeReason = null;
 
         // Dynamic Pricing Logic
         if (occupancyRate > 0.8) {
             newRate += PRICE_SENSITIVITY;
-            changeReason = 'High Demand (>80%) 📈';
         } else if (occupancyRate < 0.2) {
             newRate -= PRICE_SENSITIVITY;
             changeReason = 'Low Demand (<20%) 📉';
@@ -167,7 +170,7 @@ class SmartParkingManager {
         newRate = Math.round(newRate * 10) / 10;
 
         if (newRate !== lot.hourlyRate) {
-            console.log(`💲 Dynamic Pricing [${lot.name}]: $${lot.hourlyRate} -> $${newRate} (${changeReason || 'Stabilizing'})`);
+            console.log(`💲 Dynamic Pricing [${lot.name}]: $${lot.hourlyRate ?? 'N/A'} -> $${newRate} (${changeReason || 'Stabilizing'})`);
 
             // Update Lot API
             try {
@@ -178,7 +181,7 @@ class SmartParkingManager {
                 // Update local model
                 lot.hourlyRate = newRate;
             } catch (err) {
-                console.error('❌ Failed to update price:', err.message);
+                console.error(`❌ Failed to update price [${lot._id}]:`, err.message, err.response?.data);
             }
         }
     }
@@ -186,6 +189,8 @@ class SmartParkingManager {
     async updateTrafficCondition(lot) {
         // Determine traffic based on occupancy and demand
         const slots = this.slotsMap.get(lot._id) || [];
+        if (slots.length === 0) return;
+
         const occupancyRate = slots.filter(s => s.status === 'occupied').length / slots.length;
 
         let condition = 'low';
@@ -201,7 +206,7 @@ class SmartParkingManager {
                 );
                 lot.trafficCondition = condition;
             } catch (err) {
-                console.error('❌ Failed to update traffic:', err.message);
+                console.error(`❌ Failed to update traffic [${lot._id}]:`, err.message, err.response?.data);
             }
         }
     }
@@ -222,13 +227,15 @@ class SmartParkingManager {
         // 2. Simulate Slot Changes per Lot
         for (const lot of this.lots) {
             const slots = this.slotsMap.get(lot._id);
-            if (!slots) continue;
+            if (!slots || slots.length === 0) continue;
 
             // Pick 1-3 random slots to potentially update
             const numUpdates = 1 + Math.floor(Math.random() * 2);
 
             for (let i = 0; i < numUpdates; i++) {
                 const slot = slots[Math.floor(Math.random() * slots.length)];
+                if (!slot) continue;
+
                 const newStatus = this.getNextStatus(slot.status, demand);
 
                 if (newStatus !== slot.status) {
