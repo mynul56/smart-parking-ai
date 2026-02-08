@@ -1,9 +1,12 @@
 #!/usr/bin/env node
 
 /**
- * AI Parking Detection Simulation Service
- * Simulates AI detection updates by calling the Backend API
- * accurately mimicking a real AI edge device.
+ * AI Smart Parking Manager v2.0
+ * 
+ * Features:
+ * 1. Predictive Demand Simulation (Rush Hour logic)
+ * 2. Dynamic Pricing (Surge pricing based on occupancy)
+ * 3. Intelligent Traffic Analysis
  */
 
 const axios = require('axios');
@@ -14,209 +17,262 @@ const API_URL = process.env.API_URL || 'http://localhost:3000/api/v1';
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@parking.com';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'password123';
 
-// State
-let authToken = null;
-let parkingSlots = [];
+// Base Pricing Configuration
+const BASE_RATE = 5.0;           // $5.00/hr base
+const MIN_RATE = 2.0;            // $2.00/hr min
+const MAX_RATE = 15.0;           // $15.00/hr max
+const PRICE_SENSITIVITY = 0.5;   // Price step change
 
-// Status weights for realistic simulation
-const STATUS_TRANSITIONS = {
-    available: [
-        { status: 'occupied', weight: 0.3 },
-        { status: 'reserved', weight: 0.05 },
-        { status: 'available', weight: 0.65 },
-    ],
-    occupied: [
-        { status: 'available', weight: 0.2 },
-        { status: 'occupied', weight: 0.8 },
-    ],
-    reserved: [
-        { status: 'occupied', weight: 0.7 },
-        { status: 'available', weight: 0.1 },
-        { status: 'reserved', weight: 0.2 },
-    ],
-    maintenance: [
-        { status: 'available', weight: 0.1 },
-        { status: 'maintenance', weight: 0.9 },
-    ],
-};
-
-// --- Helper Functions ---
-
-async function login() {
-    try {
-        console.log(`🔐 Logging in as ${ADMIN_EMAIL}...`);
-        const response = await axios.post(`${API_URL}/auth/login`, {
-            email: ADMIN_EMAIL,
-            password: ADMIN_PASSWORD
-        });
-
-        if (response.data.success) {
-            authToken = response.data.data.token;
-            console.log('✅ Login successful!');
-            return true;
-        }
-    } catch (error) {
-        console.error('❌ Login failed:', error.message);
-        if (error.response) console.error(error.response.data);
+class SmartParkingManager {
+    constructor() {
+        this.authToken = null;
+        this.lots = [];
+        this.slotsMap = new Map(); // lotId -> slots[]
+        this.simulationHour = 6;   // Start simulation at 6 AM
+        this.minuteTick = 0;
     }
-    return false;
-}
 
-async function fetchSlots() {
-    // We can't fetch all slots in one go easily if pagination is enabled, 
-    // but for simulation we can try to fetch a lot.
-    // Or we can fetch lots first, then slots for a lot.
-    try {
-        if (!authToken) return false;
-
-        // 1. Get Lots
-        const lotsResponse = await axios.get(`${API_URL}/lots`, {
-            headers: { Authorization: `Bearer ${authToken}` }
-        });
-
-        const lots = lotsResponse.data.data;
-        if (!lots || lots.length === 0) {
-            console.log('⚠️ No parking lots found.');
-            return false;
+    async init() {
+        console.log('🤖 Initializing AI Smart Manager...');
+        if (await this.login()) {
+            await this.refreshData();
+            this.startLoop();
+        } else {
+            console.error('❌ Initialization failed. Exiting.');
+            process.exit(1);
         }
+    }
 
-        // 2. Get Slots for random lot (or all)
-        // For simulation, let's pick the first lot for now, or rotate
-        const lot = lots[0];
-        console.log(`📍 Fetching slots for lot: ${lot.name}`);
+    async login() {
+        let retries = 5;
+        let delay = 1000;
 
-        const slotsResponse = await axios.get(`${API_URL}/lots/${lot._id}/slots`, {
-            headers: { Authorization: `Bearer ${authToken}` }
-        });
+        while (retries > 0) {
+            try {
+                console.log(`🔐 Logging in as ${ADMIN_EMAIL}...`);
+                const response = await axios.post(`${API_URL}/auth/login`, {
+                    email: ADMIN_EMAIL,
+                    password: ADMIN_PASSWORD
+                });
 
-        parkingSlots = slotsResponse.data.data;
-        console.log(`✅ Loaded ${parkingSlots.length} slots for simulation.`);
-        return true;
-
-    } catch (error) {
-        console.error('❌ Failed to fetch slots:', error.message);
+                if (response.data.success) {
+                    this.authToken = response.data.data.token;
+                    console.log('✅ Login successful!');
+                    return true;
+                }
+            } catch (error) {
+                console.error(`❌ Login failed: ${error.message}. Retrying in ${delay / 1000}s...`);
+                await new Promise(resolve => setTimeout(resolve, delay));
+                delay *= 2;
+                retries--;
+            }
+        }
         return false;
     }
-}
 
-function getNextStatus(currentStatus) {
-    const transitions = STATUS_TRANSITIONS[currentStatus] || STATUS_TRANSITIONS.available;
-    const random = Math.random();
-    let cumulative = 0;
+    async refreshData() {
+        if (!this.authToken) return;
+        try {
+            // 1. Fetch Lots
+            const lotsRes = await axios.get(`${API_URL}/lots`, {
+                headers: { Authorization: `Bearer ${this.authToken}` }
+            });
+            this.lots = lotsRes.data.data || [];
+            console.log(`📍 Managed Lots: ${this.lots.length}`);
 
-    for (const transition of transitions) {
-        cumulative += transition.weight;
-        if (random <= cumulative) {
-            return transition.status;
-        }
-    }
-    return currentStatus;
-}
-
-function generateConfidence(status) {
-    if (status === 'occupied' || status === 'available') {
-        return 0.85 + Math.random() * 0.14; // 85-99%
-    }
-    return 0.70 + Math.random() * 0.25; // 70-95%
-}
-
-async function updateRandomSlot() {
-    if (parkingSlots.length === 0 || !authToken) return;
-
-    try {
-        const randomSlot = parkingSlots[Math.floor(Math.random() * parkingSlots.length)];
-        const newStatus = getNextStatus(randomSlot.status);
-
-        // Only update if changed or random chance (to simulate confidence updates)
-        if (newStatus === randomSlot.status && Math.random() > 0.3) return;
-
-        const newConfidence = generateConfidence(newStatus);
-        const previousStatus = randomSlot.status;
-
-        console.log(`🔄 Updating Slot ${randomSlot.slotNumber}: ${previousStatus} -> ${newStatus}`);
-
-        // Call API
-        const response = await axios.put(
-            `${API_URL}/slots/${randomSlot._id}`,
-            {
-                status: newStatus,
-                confidence: newConfidence
-            },
-            {
-                headers: { Authorization: `Bearer ${authToken}` }
+            // 2. Fetch Slots for each lot
+            for (const lot of this.lots) {
+                const slotsRes = await axios.get(`${API_URL}/lots/${lot._id}/slots`, {
+                    headers: { Authorization: `Bearer ${this.authToken}` }
+                });
+                this.slotsMap.set(lot._id, slotsRes.data.data || []);
             }
-        );
+            console.log('✅ Data synchronized.');
+        } catch (error) {
+            console.error('❌ Failed to refresh data:', error.message);
+        }
+    }
 
-        if (response.data.success) {
-            // Update local cache
-            const updatedSlot = response.data.data;
-            const index = parkingSlots.findIndex(s => s._id === updatedSlot._id);
-            if (index !== -1) {
-                parkingSlots[index] = updatedSlot;
+    /**
+     * Returns a demand factor (0.0 - 1.0) based on Time of Day
+     * Simulates:
+     * - Morning Rush (7-9 AM)
+     * - Lunch (12-1 PM)
+     * - Evening Exit (5-7 PM)
+     */
+    getDemandFactor() {
+        const hour = this.simulationHour;
+
+        // Simple multi-peak function
+        // Morning peak around 8-9
+        const morningPeak = Math.max(0, 1 - Math.abs(hour - 8.5) / 2);
+        // Lunch peak around 12-13
+        const lunchPeak = Math.max(0, 0.8 - Math.abs(hour - 12.5) / 2);
+        // Evening peak around 17-18
+        const eveningPeak = Math.max(0, 1 - Math.abs(hour - 17.5) / 2);
+
+        // Base demand + peaks
+        let demand = 0.2 + (morningPeak * 0.8) + (lunchPeak * 0.6) + (eveningPeak * 0.9);
+        return Math.min(1.0, demand);
+    }
+
+    /**
+     * Logic to determine if a slot should change state
+     */
+    getNextStatus(currentStatus, demandFactor) {
+        const random = Math.random();
+
+        // High demand = faster fill up, slower empty
+        if (currentStatus === 'available') {
+            // Chance to fill increases with demand
+            if (random < (0.1 + (demandFactor * 0.5))) {
+                return 'occupied';
+            }
+        } else if (currentStatus === 'occupied') {
+            // Chance to empty decreases with demand (people stay longer)
+            // But increases during evening exit? Let's keep it simple.
+            if (random < (0.1 - (demandFactor * 0.05))) {
+                return 'available';
+            }
+        }
+        return currentStatus;
+    }
+
+    async updatePricing(lot) {
+        const slots = this.slotsMap.get(lot._id) || [];
+        if (slots.length === 0) return;
+
+        const occupied = slots.filter(s => s.status === 'occupied' || s.status === 'reserved').length;
+        const occupancyRate = occupied / slots.length;
+
+        let newRate = lot.hourlyRate || BASE_RATE;
+        let changeReason = null;
+
+        // Dynamic Pricing Logic
+        if (occupancyRate > 0.8) {
+            newRate += PRICE_SENSITIVITY;
+            changeReason = 'High Demand (>80%) 📈';
+        } else if (occupancyRate < 0.2) {
+            newRate -= PRICE_SENSITIVITY;
+            changeReason = 'Low Demand (<20%) 📉';
+        } else {
+            // Stabilize towards base rate
+            if (newRate > BASE_RATE) newRate -= 0.1;
+            if (newRate < BASE_RATE) newRate += 0.1;
+        }
+
+        // Clamp
+        newRate = Math.max(MIN_RATE, Math.min(MAX_RATE, newRate));
+        // Round to 1 decimal
+        newRate = Math.round(newRate * 10) / 10;
+
+        if (newRate !== lot.hourlyRate) {
+            console.log(`💲 Dynamic Pricing [${lot.name}]: $${lot.hourlyRate} -> $${newRate} (${changeReason || 'Stabilizing'})`);
+
+            // Update Lot API
+            try {
+                await axios.put(`${API_URL}/lots/${lot._id}`,
+                    { pricing: { hourlyRate: newRate, currency: 'USD' } },
+                    { headers: { Authorization: `Bearer ${this.authToken}` } }
+                );
+                // Update local model
+                lot.hourlyRate = newRate;
+            } catch (err) {
+                console.error('❌ Failed to update price:', err.message);
+            }
+        }
+    }
+
+    async updateTrafficCondition(lot) {
+        // Determine traffic based on occupancy and demand
+        const slots = this.slotsMap.get(lot._id) || [];
+        const occupancyRate = slots.filter(s => s.status === 'occupied').length / slots.length;
+
+        let condition = 'low';
+        if (occupancyRate > 0.85) condition = 'heavy';
+        else if (occupancyRate > 0.6) condition = 'medium';
+
+        if (lot.trafficCondition !== condition) {
+            console.log(`🚦 Traffic Update [${lot.name}]: ${lot.trafficCondition} -> ${condition}`);
+            try {
+                await axios.put(`${API_URL}/lots/${lot._id}`,
+                    { trafficCondition: condition },
+                    { headers: { Authorization: `Bearer ${this.authToken}` } }
+                );
+                lot.trafficCondition = condition;
+            } catch (err) {
+                console.error('❌ Failed to update traffic:', err.message);
+            }
+        }
+    }
+
+    async step() {
+        // 1. Advance Simulation Time (1 real sec = 5 sim minutes)
+        this.minuteTick += 5;
+        if (this.minuteTick >= 60) {
+            this.minuteTick = 0;
+            this.simulationHour = (this.simulationHour + 1) % 24;
+
+            const demandParam = this.getDemandFactor().toFixed(2);
+            console.log(`\n⏰ Simulation Time: ${this.simulationHour}:00 | Demand Factor: ${demandParam}`);
+        }
+
+        const demand = this.getDemandFactor();
+
+        // 2. Simulate Slot Changes per Lot
+        for (const lot of this.lots) {
+            const slots = this.slotsMap.get(lot._id);
+            if (!slots) continue;
+
+            // Pick 1-3 random slots to potentially update
+            const numUpdates = 1 + Math.floor(Math.random() * 2);
+
+            for (let i = 0; i < numUpdates; i++) {
+                const slot = slots[Math.floor(Math.random() * slots.length)];
+                const newStatus = this.getNextStatus(slot.status, demand);
+
+                if (newStatus !== slot.status) {
+                    // console.log(`🔄 Slot ${slot.slotNumber}: ${slot.status} -> ${newStatus}`);
+                    // Call API
+                    try {
+                        const res = await axios.put(`${API_URL}/slots/${slot._id}`,
+                            { status: newStatus, confidence: 0.9 + (Math.random() * 0.09) },
+                            { headers: { Authorization: `Bearer ${this.authToken}` } }
+                        );
+                        if (res.data.success) {
+                            // Update local
+                            Object.assign(slot, res.data.data);
+                        }
+                    } catch (e) {
+                        // ignore
+                    }
+                }
             }
 
-            console.log(`✅ AI Update: Slot ${updatedSlot.slotNumber} ${previousStatus} → ${newStatus} (${(newConfidence * 100).toFixed(1)}%)`);
-        }
-
-    } catch (error) {
-        console.error('❌ Error updating slot:', error.message);
-        // If 401, re-login
-        if (error.response && error.response.status === 401) {
-            console.log('⚠️ Token expired, re-logging in...');
-            await login();
+            // 3. AI Manager Logic (Pricing & Traffic) - Run less frequently?
+            // Let's run it every step for demo purposes so user sees it
+            await this.updatePricing(lot);
+            await this.updateTrafficCondition(lot);
         }
     }
-}
 
-async function startSimulation() {
-    console.log('🤖 Starting AI Simulation Service v2.0');
-    console.log(`📡 API URL: ${API_URL}`);
+    startLoop() {
+        console.log('🚀 Smart Simulation Started. Press Ctrl+C to stop.');
+        console.log(`⏰ Simulating 24h cycle. 1 real sec = 5 simulation minutes.`);
 
-    // Initial Login
-    if (!await login()) {
-        console.error('🛑 Critical: Login failed. Exiting.');
-        process.exit(1);
+        setInterval(() => {
+            this.step();
+        }, 1000); // 1 tick per second
     }
-
-    // Initial Data Fetch
-    if (!await fetchSlots()) {
-        console.error('🛑 Critical: Data fetch failed. Exiting.');
-        process.exit(1);
-    }
-
-    // Simulation Loop
-    console.log('🚀 Simulation running...');
-    console.log('📊 Updating slots every 2-5 seconds');
-    console.log('='.repeat(50));
-
-    // Regular updates
-    setInterval(() => {
-        updateRandomSlot();
-    }, 2000 + Math.random() * 3000);
-
-    // Occasional batch updates (simulating a car driving through multiple spots?)
-    // Or just concurrent updates
-    setInterval(() => {
-        const count = 2 + Math.floor(Math.random() * 3);
-        console.log(`\n⚡ Batch burst: ${count} updates`);
-        for (let i = 0; i < count; i++) {
-            setTimeout(() => updateRandomSlot(), i * 500);
-        }
-    }, 20000);
-
-    // Refresh slots occasionally to keep sync
-    setInterval(() => {
-        console.log('🔄 Refreshing slot cache...');
-        fetchSlots();
-    }, 60000 * 5); // Every 5 minutes
 }
 
 // Start
-startSimulation();
+const manager = new SmartParkingManager();
+manager.init();
 
 // Handle graceful shutdown
 process.on('SIGINT', () => {
-    console.log('\n\n🛑 Stopping AI simulation...');
+    console.log('\n\n🛑 Stopping Smart Manager...');
     process.exit(0);
 });
 

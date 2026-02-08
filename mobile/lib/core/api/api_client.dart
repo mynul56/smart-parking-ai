@@ -100,6 +100,13 @@ class ApiClient {
     return _dio.get('/lots/$id');
   }
 
+  Future<Response> getRecommendations(double lat, double lng) {
+    return _dio.post('/lots/recommend', data: {
+      'lat': lat,
+      'lng': lng,
+    });
+  }
+
   Future<Response> getSlots(String lotId, {String? status, int? limit}) {
     return _dio.get('/lots/$lotId/slots', queryParameters: {
       if (status != null) 'status': status,

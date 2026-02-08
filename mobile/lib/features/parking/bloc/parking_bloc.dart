@@ -94,15 +94,21 @@ class ParkingBloc extends Bloc<ParkingEvent, ParkingState> {
   ) async {
     emit(ParkingLoading());
     try {
-      final response = await apiClient.getParkingLots(
-        lat: event.lat,
-        lng: event.lng,
-        radius: event.radius,
-      );
+      final response = (event.lat != null && event.lng != null)
+          ? await apiClient.getRecommendations(event.lat!, event.lng!)
+          : await apiClient.getParkingLots(
+              lat: event.lat,
+              lng: event.lng,
+              radius: event.radius,
+            );
 
       if (response.statusCode == 200) {
         final List lots = response.data['data'];
         final parkingLots = lots.map((e) => ParkingLot.fromJson(e)).toList();
+
+        // If getting recommendations, ensure they are sorted by score (handled by backend)
+        // If needed, we can re-sort here or filter.
+
         emit(ParkingLotsLoaded(parkingLots));
       } else {
         emit(ParkingError('Failed to load parking lots'));

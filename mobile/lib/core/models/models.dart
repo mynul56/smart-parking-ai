@@ -10,6 +10,8 @@ class ParkingLot extends Equatable {
   final double lng;
   final double hourlyRate;
   final String status;
+  final String trafficCondition;
+  final bool isBestMatch;
 
   const ParkingLot({
     required this.id,
@@ -21,6 +23,8 @@ class ParkingLot extends Equatable {
     required this.lng,
     required this.hourlyRate,
     required this.status,
+    this.trafficCondition = 'low',
+    this.isBestMatch = false,
   });
 
   factory ParkingLot.fromJson(Map<String, dynamic> json) {
@@ -34,6 +38,8 @@ class ParkingLot extends Equatable {
       lng: json['location']['coordinates'][0],
       hourlyRate: (json['pricing']?['hourlyRate'] ?? 0).toDouble(),
       status: json['status'] ?? 'active',
+      trafficCondition: json['trafficCondition'] ?? 'low',
+      isBestMatch: json['isBestMatch'] ?? false,
     );
   }
 
@@ -41,7 +47,8 @@ class ParkingLot extends Equatable {
       totalSlots > 0 ? (totalSlots - availableSlots) / totalSlots : 0.0;
 
   @override
-  List<Object?> get props => [id, name, availableSlots, totalSlots];
+  List<Object?> get props =>
+      [id, name, availableSlots, totalSlots, trafficCondition, isBestMatch];
 }
 
 class ParkingSlot extends Equatable {

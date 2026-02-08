@@ -15,13 +15,13 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   final Completer<GoogleMapController> _controller =
       Completer<GoogleMapController>();
-  bool _isMapView = true;
   Set<Marker> _markers = {};
+  ParkingLot? _selectedLot;
 
   // San Francisco Center
   static const CameraPosition _kSanFrancisco = CameraPosition(
     target: LatLng(37.7749, -122.4194),
-    zoom: 12,
+    zoom: 14,
   );
 
   @override
@@ -30,23 +30,31 @@ class _HomePageState extends State<HomePage> {
     context.read<ParkingBloc>().add(LoadParkingLots());
   }
 
+  void _onMapCreated(GoogleMapController controller) {
+    _controller.complete(controller);
+    // if (_mapStyle != null) {
+    //   controller.setMapStyle(_mapStyle);
+    // }
+  }
+
   void _updateMarkers(List<ParkingLot> lots) {
     setState(() {
       _markers = lots.map((lot) {
+        final isSelected = _selectedLot?.id == lot.id;
         return Marker(
           markerId: MarkerId(lot.id),
           position: LatLng(lot.lat, lot.lng),
-          infoWindow: InfoWindow(
-            title: lot.name,
-            snippet:
-                'Available: ${lot.availableSlots} / Rate: \$${lot.hourlyRate}/hr',
-            onTap: () {
-              Navigator.of(context).pushNamed('/lot-detail', arguments: lot.id);
-            },
-          ),
+          onTap: () {
+            setState(() {
+              _selectedLot = lot;
+            });
+            _animateToLocation(lot.lat, lot.lng);
+          },
           icon: BitmapDescriptor.defaultMarkerWithHue(
             lot.availableSlots > 0
-                ? BitmapDescriptor.hueGreen
+                ? (isSelected
+                    ? BitmapDescriptor.hueAzure
+                    : BitmapDescriptor.hueGreen)
                 : BitmapDescriptor.hueRed,
           ),
         );
@@ -54,29 +62,14 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
+  Future<void> _animateToLocation(double lat, double lng) async {
+    final GoogleMapController controller = await _controller.future;
+    controller.animateCamera(CameraUpdate.newLatLng(LatLng(lat, lng)));
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Smart Parking'),
-        actions: [
-          IconButton(
-            icon: Icon(_isMapView ? Icons.list : Icons.map),
-            tooltip: _isMapView ? 'Switch to List' : 'Switch to Map',
-            onPressed: () {
-              setState(() {
-                _isMapView = !_isMapView;
-              });
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: () {
-              context.read<ParkingBloc>().add(LoadParkingLots());
-            },
-          ),
-        ],
-      ),
       body: BlocConsumer<ParkingBloc, ParkingState>(
         listener: (context, state) {
           if (state is ParkingLotsLoaded) {
@@ -86,56 +79,205 @@ class _HomePageState extends State<HomePage> {
         builder: (context, state) {
           if (state is ParkingLoading) {
             return const Center(child: CircularProgressIndicator());
-          } else if (state is ParkingError) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.error, size: 64, color: Colors.red),
-                  const SizedBox(height: 16),
-                  Text(state.message),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: () {
-                      context.read<ParkingBloc>().add(LoadParkingLots());
-                    },
-                    child: const Text('Retry'),
-                  ),
-                ],
-              ),
-            );
-          } else if (state is ParkingLotsLoaded) {
-            if (state.lots.isEmpty) {
-              return const Center(child: Text('No parking lots available'));
-            }
-
-            return _isMapView
-                ? GoogleMap(
-                    mapType: MapType.normal,
-                    initialCameraPosition: _kSanFrancisco,
-                    markers: _markers,
-                    onMapCreated: (GoogleMapController controller) {
-                      _controller.complete(controller);
-                    },
-                    myLocationEnabled: true,
-                    myLocationButtonEnabled: true,
-                  )
-                : RefreshIndicator(
-                    onRefresh: () async {
-                      context.read<ParkingBloc>().add(LoadParkingLots());
-                    },
-                    child: ListView.builder(
-                      padding: const EdgeInsets.all(16),
-                      itemCount: state.lots.length,
-                      itemBuilder: (context, index) {
-                        return _ParkingLotCard(lot: state.lots[index]);
-                      },
-                    ),
-                  );
           }
 
-          return const Center(child: Text('Pull to refresh'));
+          final lots = state is ParkingLotsLoaded ? state.lots : <ParkingLot>[];
+
+          return Stack(
+            children: [
+              // 1. Google Map Layer (Full Screen)
+              GoogleMap(
+                mapType: MapType.normal,
+                initialCameraPosition: _kSanFrancisco,
+                markers: _markers,
+                onMapCreated: _onMapCreated,
+                myLocationEnabled: true,
+                myLocationButtonEnabled: false,
+                zoomControlsEnabled: false,
+                onTap: (_) {
+                  setState(() {
+                    _selectedLot = null;
+                  });
+                  _updateMarkers(lots);
+                },
+              ),
+
+              // 2. Safe Area for UI Overlays
+              Positioned.fill(
+                child: SafeArea(
+                  child: Stack(
+                    children: [
+                      // Top Search Box (Relative to SafeArea)
+                      Positioned(
+                        top: 10,
+                        left: 16,
+                        right: 16,
+                        child: Column(
+                          children: [
+                            Container(
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(30),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.1),
+                                    blurRadius: 10,
+                                    offset: const Offset(0, 4),
+                                  ),
+                                ],
+                              ),
+                              child: TextField(
+                                decoration: InputDecoration(
+                                  hintText: 'Search parking locations...',
+                                  prefixIcon: const Icon(Icons.search,
+                                      color: Colors.grey),
+                                  suffixIcon: IconButton(
+                                    icon: const Icon(Icons.tune,
+                                        color: Colors.grey),
+                                    onPressed: () {
+                                      // TODO: Show filters
+                                    },
+                                  ),
+                                  border: InputBorder.none,
+                                  contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 20, vertical: 15),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      // Right Side Buttons
+                      Positioned(
+                        right: 16,
+                        top: 80, // Moved up slightly as we are in SafeArea
+                        child: Column(
+                          children: [
+                            FloatingActionButton.small(
+                              heroTag: 'location_btn',
+                              backgroundColor: Colors.white,
+                              foregroundColor: Colors.black87,
+                              child: const Icon(Icons.my_location),
+                              onPressed: () async {
+                                final controller = await _controller.future;
+                                controller.animateCamera(
+                                    CameraUpdate.newCameraPosition(
+                                        _kSanFrancisco));
+                              },
+                            ),
+                            const SizedBox(height: 12),
+                            FloatingActionButton.small(
+                              heroTag: 'refresh_btn',
+                              backgroundColor: Colors.white,
+                              foregroundColor: Colors.black87,
+                              child: const Icon(Icons.refresh),
+                              onPressed: () {
+                                context
+                                    .read<ParkingBloc>()
+                                    .add(LoadParkingLots());
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      // Bottom Cards (Card or List)
+                      if (_selectedLot != null)
+                        Positioned(
+                          left: 16,
+                          right: 16,
+                          bottom: 10,
+                          child: _ParkingLotDetailCard(lot: _selectedLot!),
+                        )
+                      else if (lots.isNotEmpty)
+                        Positioned(
+                          bottom: 10,
+                          left: 0,
+                          right: 0,
+                          child: SizedBox(
+                            height: 160,
+                            child: ListView.builder(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 16),
+                              scrollDirection: Axis.horizontal,
+                              itemCount: lots.length,
+                              itemBuilder: (context, index) {
+                                return Padding(
+                                  padding: const EdgeInsets.only(right: 12),
+                                  child: SizedBox(
+                                    width: 300,
+                                    child: GestureDetector(
+                                      onTap: () {
+                                        setState(() {
+                                          _selectedLot = lots[index];
+                                          _updateMarkers(lots);
+                                        });
+                                        _animateToLocation(
+                                            lots[index].lat, lots[index].lng);
+                                      },
+                                      child: _ParkingLotCard(
+                                          lot: lots[index], compact: true),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          );
         },
+      ),
+    );
+  }
+}
+
+class _ParkingLotDetailCard extends StatelessWidget {
+  final ParkingLot lot;
+
+  const _ParkingLotDetailCard({required this.lot});
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: 8,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _ParkingLotCard(lot: lot, compact: false),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () {
+                  Navigator.of(context)
+                      .pushNamed('/lot-detail', arguments: lot.id);
+                },
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  backgroundColor: Colors.blueAccent,
+                ),
+                child: const Text(
+                  'View Details & Reserve',
+                  style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -143,8 +285,9 @@ class _HomePageState extends State<HomePage> {
 
 class _ParkingLotCard extends StatelessWidget {
   final ParkingLot lot;
+  final bool compact;
 
-  const _ParkingLotCard({required this.lot});
+  const _ParkingLotCard({required this.lot, this.compact = false});
 
   Color _getOccupancyColor() {
     if (lot.occupancyRate < 0.5) return Colors.green;
@@ -154,131 +297,189 @@ class _ParkingLotCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 16),
-      elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: InkWell(
-        onTap: () {
-          Navigator.of(context).pushNamed('/lot-detail', arguments: lot.id);
-        },
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const Icon(Icons.local_parking, color: Colors.blue, size: 32),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          lot.name,
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: compact
+            ? [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.1),
+                  blurRadius: 8,
+                  offset: const Offset(0, 4),
+                )
+              ]
+            : [],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        lot.name,
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          lot.address,
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.grey.shade600,
-                          ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        lot.address,
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey.shade600,
                         ),
-                      ],
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '\$${lot.hourlyRate.toStringAsFixed(0)}/h',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.blue,
                     ),
                   ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  _InfoChip(
-                    icon: Icons.check_circle,
-                    label: 'Available',
-                    value: '${lot.availableSlots}',
-                    color: Colors.green,
-                  ),
-                  _InfoChip(
-                    icon: Icons.grid_view,
-                    label: 'Total',
-                    value: '${lot.totalSlots}',
-                    color: Colors.blue,
-                  ),
-                  _InfoChip(
-                    icon: Icons.attach_money,
-                    label: 'Rate/hr',
-                    value: '\$${lot.hourlyRate.toStringAsFixed(0)}',
-                    color: Colors.purple,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: LinearProgressIndicator(
-                  value: lot.occupancyRate,
-                  minHeight: 8,
-                  backgroundColor: Colors.grey.shade200,
-                  valueColor: AlwaysStoppedAnimation(_getOccupancyColor()),
                 ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                '${(lot.occupancyRate * 100).toStringAsFixed(0)}% Full',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey.shade600,
-                  fontWeight: FontWeight.w500,
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            '${(lot.occupancyRate * 100).toStringAsFixed(0)}% Occupied',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: _getOccupancyColor(),
+                            ),
+                          ),
+                          Text(
+                            '${lot.availableSlots} spots left',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      // Progress Bar
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: LinearProgressIndicator(
+                          value: lot.occupancyRate,
+                          minHeight: 6,
+                          backgroundColor: Colors.grey.shade100,
+                          valueColor:
+                              AlwaysStoppedAnimation(_getOccupancyColor()),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      // Tags Row (Traffic & Best Match)
+                      Row(
+                        children: [
+                          if (lot.isBestMatch)
+                            Container(
+                              margin: const EdgeInsets.only(right: 8),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: Colors.purple,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: const Row(
+                                children: [
+                                  Icon(Icons.star,
+                                      color: Colors.white, size: 12),
+                                  SizedBox(width: 4),
+                                  Text(
+                                    'BEST MATCH',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: _getTrafficColor(lot.trafficCondition)
+                                  .withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(Icons.traffic,
+                                    color:
+                                        _getTrafficColor(lot.trafficCondition),
+                                    size: 12),
+                                const SizedBox(width: 4),
+                                Text(
+                                  lot.trafficCondition.toUpperCase(),
+                                  style: TextStyle(
+                                    color:
+                                        _getTrafficColor(lot.trafficCondition),
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            ],
-          ),
+              ],
+            ),
+          ],
         ),
       ),
     );
   }
-}
 
-class _InfoChip extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String value;
-  final Color color;
-
-  const _InfoChip({
-    required this.icon,
-    required this.label,
-    required this.value,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Icon(icon, color: color, size: 20),
-        const SizedBox(height: 4),
-        Text(
-          value,
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-            color: color,
-          ),
-        ),
-        Text(
-          label,
-          style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
-        ),
-      ],
-    );
+  Color _getTrafficColor(String condition) {
+    switch (condition.toLowerCase()) {
+      case 'heavy':
+        return Colors.red;
+      case 'medium':
+        return Colors.orange;
+      case 'low':
+      default:
+        return Colors.green;
+    }
   }
 }
