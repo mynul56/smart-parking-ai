@@ -29,17 +29,16 @@ class ApiClient {
         if (token != null) {
           options.headers['Authorization'] = 'Bearer $token';
         }
-        print('API Request: ${options.method} ${options.uri}');
+        // print('API Request: ${options.method} ${options.uri}');
         return handler.next(options);
       },
       onResponse: (response, handler) {
-        print(
-            'API Response: ${response.statusCode} - ${response.requestOptions.uri}');
+        // print('API Response: ${response.statusCode} - ${response.requestOptions.uri}');
         return handler.next(response);
       },
       onError: (error, handler) async {
-        print('API Error: ${error.message}');
-        print('Response: ${error.response?.data}');
+        // print('API Error: ${error.message}');
+        // print('Response: ${error.response?.data}');
 
         if (error.response?.statusCode == 401) {
           // Token expired, try refresh

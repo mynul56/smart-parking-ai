@@ -96,9 +96,9 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
   ) async {
     emit(AuthLoading());
     try {
-      print('Attempting login for: ${event.email}');
+      // print('Attempting login for: ${event.email}');
       final response = await apiClient.login(event.email, event.password);
-      print('Login response status: ${response.statusCode}');
+      // print('Login response status: ${response.statusCode}');
 
       if (response.statusCode == 200) {
         final data = response.data['data'];
@@ -110,16 +110,18 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
         await prefs.setString('refreshToken', refreshToken);
         await prefs.setString('userId', user.id);
 
-        print('Login successful for user: ${user.email}');
+        await prefs.setString('userId', user.id);
+
+        // print('Login successful for user: ${user.email}');
         emit(Authenticated(user, token));
       } else {
         final errorMsg = 'Login failed with status: ${response.statusCode}';
-        print(errorMsg);
+        // print(errorMsg);
         emit(AuthError(errorMsg));
       }
     } catch (e) {
       final errorMsg = 'Login error: ${e.toString()}';
-      print(errorMsg);
+      // print(errorMsg);
       emit(AuthError(errorMsg));
     }
   }
