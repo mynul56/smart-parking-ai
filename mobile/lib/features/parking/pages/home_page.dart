@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../../../core/models/models.dart';
 import '../../../core/services/location_service.dart';
@@ -17,10 +18,12 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  final Completer<GoogleMapController> _controller = Completer<GoogleMapController>();
+  final Completer<GoogleMapController> _controller =
+      Completer<GoogleMapController>();
   Set<Marker> _markers = {};
   ParkingLot? _selectedLot;
   final LocationService _locationService = getIt<LocationService>();
+  bool _locationPermissionGranted = false;
 
   // Default to Dhaka, Bangladesh (will be updated with actual location)
   CameraPosition _initialPosition = const CameraPosition(
@@ -31,8 +34,16 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
+    _requestLocationPermission();
     _getCurrentLocation();
     context.read<ParkingBloc>().add(LoadParkingLots());
+  }
+
+  Future<void> _requestLocationPermission() async {
+    final status = await Permission.location.request();
+    setState(() {
+      _locationPermissionGranted = status.isGranted;
+    });
   }
 
   Future<void> _getCurrentLocation() async {
@@ -79,7 +90,9 @@ class _HomePageState extends State<HomePage> {
           },
           icon: BitmapDescriptor.defaultMarkerWithHue(
             lot.availableSlots > 0
-                ? (isSelected ? BitmapDescriptor.hueAzure : BitmapDescriptor.hueGreen)
+                ? (isSelected
+                    ? BitmapDescriptor.hueAzure
+                    : BitmapDescriptor.hueGreen)
                 : BitmapDescriptor.hueRed,
           ),
         );
@@ -116,7 +129,7 @@ class _HomePageState extends State<HomePage> {
                 initialCameraPosition: _initialPosition,
                 markers: _markers,
                 onMapCreated: _onMapCreated,
-                myLocationEnabled: true,
+                myLocationEnabled: _locationPermissionGranted,
                 myLocationButtonEnabled: false,
                 zoomControlsEnabled: false,
                 onTap: (_) {
@@ -154,15 +167,18 @@ class _HomePageState extends State<HomePage> {
                               child: TextField(
                                 decoration: InputDecoration(
                                   hintText: 'Search parking locations...',
-                                  prefixIcon: const Icon(Icons.search, color: Colors.grey),
+                                  prefixIcon: const Icon(Icons.search,
+                                      color: Colors.grey),
                                   suffixIcon: IconButton(
-                                    icon: const Icon(Icons.tune, color: Colors.grey),
+                                    icon: const Icon(Icons.tune,
+                                        color: Colors.grey),
                                     onPressed: () {
                                       // TODO: Show filters
                                     },
                                   ),
                                   border: InputBorder.none,
-                                  contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+                                  contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 20, vertical: 15),
                                 ),
                               ),
                             ),
@@ -192,7 +208,9 @@ class _HomePageState extends State<HomePage> {
                               foregroundColor: Colors.black87,
                               child: const Icon(Icons.refresh),
                               onPressed: () {
-                                context.read<ParkingBloc>().add(LoadParkingLots());
+                                context
+                                    .read<ParkingBloc>()
+                                    .add(LoadParkingLots());
                               },
                             ),
                           ],
@@ -215,7 +233,8 @@ class _HomePageState extends State<HomePage> {
                           child: SizedBox(
                             height: 160,
                             child: ListView.builder(
-                              padding: const EdgeInsets.symmetric(horizontal: 16),
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 16),
                               scrollDirection: Axis.horizontal,
                               itemCount: lots.length,
                               itemBuilder: (context, index) {
@@ -229,9 +248,11 @@ class _HomePageState extends State<HomePage> {
                                           _selectedLot = lots[index];
                                           _updateMarkers(lots);
                                         });
-                                        _animateToLocation(lots[index].lat, lots[index].lng);
+                                        _animateToLocation(
+                                            lots[index].lat, lots[index].lng);
                                       },
-                                      child: _ParkingLotCard(lot: lots[index], compact: true),
+                                      child: _ParkingLotCard(
+                                          lot: lots[index], compact: true),
                                     ),
                                   ),
                                 );
@@ -271,7 +292,8 @@ class _ParkingLotDetailCard extends StatelessWidget {
               width: double.infinity,
               child: ElevatedButton(
                 onPressed: () {
-                  Navigator.of(context).pushNamed('/lot-detail', arguments: lot.id);
+                  Navigator.of(context)
+                      .pushNamed('/lot-detail', arguments: lot.id);
                 },
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 12),
@@ -282,7 +304,10 @@ class _ParkingLotDetailCard extends StatelessWidget {
                 ),
                 child: const Text(
                   'View Details & Reserve',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                  style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white),
                 ),
               ),
             ),
@@ -357,7 +382,8 @@ class _ParkingLotCard extends StatelessWidget {
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
                     color: Colors.blue.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(12),
@@ -407,7 +433,8 @@ class _ParkingLotCard extends StatelessWidget {
                           value: lot.occupancyRate,
                           minHeight: 6,
                           backgroundColor: Colors.grey.shade100,
-                          valueColor: AlwaysStoppedAnimation(_getOccupancyColor()),
+                          valueColor:
+                              AlwaysStoppedAnimation(_getOccupancyColor()),
                         ),
                       ),
                       const SizedBox(height: 8),
@@ -417,14 +444,16 @@ class _ParkingLotCard extends StatelessWidget {
                           if (lot.isBestMatch)
                             Container(
                               margin: const EdgeInsets.only(right: 8),
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 4),
                               decoration: BoxDecoration(
                                 color: Colors.purple,
                                 borderRadius: BorderRadius.circular(4),
                               ),
                               child: const Row(
                                 children: [
-                                  Icon(Icons.star, color: Colors.white, size: 12),
+                                  Icon(Icons.star,
+                                      color: Colors.white, size: 12),
                                   SizedBox(width: 4),
                                   Text(
                                     'BEST MATCH',
@@ -438,19 +467,25 @@ class _ParkingLotCard extends StatelessWidget {
                               ),
                             ),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(
-                              color: _getTrafficColor(lot.trafficCondition).withValues(alpha: 0.1),
+                              color: _getTrafficColor(lot.trafficCondition)
+                                  .withValues(alpha: 0.1),
                               borderRadius: BorderRadius.circular(4),
                             ),
                             child: Row(
                               children: [
-                                Icon(Icons.traffic, color: _getTrafficColor(lot.trafficCondition), size: 12),
+                                Icon(Icons.traffic,
+                                    color:
+                                        _getTrafficColor(lot.trafficCondition),
+                                    size: 12),
                                 const SizedBox(width: 4),
                                 Text(
                                   lot.trafficCondition.toUpperCase(),
                                   style: TextStyle(
-                                    color: _getTrafficColor(lot.trafficCondition),
+                                    color:
+                                        _getTrafficColor(lot.trafficCondition),
                                     fontSize: 10,
                                     fontWeight: FontWeight.bold,
                                   ),
