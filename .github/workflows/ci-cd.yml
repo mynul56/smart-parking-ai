@@ -34,7 +34,9 @@ jobs:
   docker-build:
     runs-on: ubuntu-latest
     needs: test
-    if: github.ref == 'refs/heads/main'
+    # TODO: Enable this after adding DOCKER_USERNAME and DOCKER_PASSWORD secrets to GitHub
+    # Change 'false' to: github.ref == 'refs/heads/main'
+    if: false
     
     steps:
       - uses: actions/checkout@v3
