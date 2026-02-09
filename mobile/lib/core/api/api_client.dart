@@ -1,6 +1,7 @@
+import 'dart:io';
+
 import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:io';
 
 class ApiClient {
   static String get baseUrl {
@@ -73,6 +74,17 @@ class ApiClient {
       await _prefs.remove('refreshToken');
     }
     return false;
+  }
+
+  // Generic HTTP methods
+  Future<Map<String, dynamic>> post(String path, Map<String, dynamic> data) async {
+    final response = await _dio.post(path, data: data);
+    return response.data as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> get(String path) async {
+    final response = await _dio.get(path);
+    return response.data as Map<String, dynamic>;
   }
 
   // Auth

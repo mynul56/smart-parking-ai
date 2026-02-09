@@ -1,7 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:get_it/get_it.dart';
+
+import '../../features/auth/pages/profile_page.dart';
+import '../../features/chatbot/bloc/chatbot_bloc.dart';
+import '../../features/chatbot/pages/chatbot_page.dart';
 import '../../features/parking/pages/home_page.dart';
 import '../../features/reservations/pages/reservations_page.dart';
-import '../../features/auth/pages/profile_page.dart';
+import '../api/api_client.dart';
 
 class MainScaffold extends StatefulWidget {
   const MainScaffold({super.key});
@@ -13,10 +19,14 @@ class MainScaffold extends StatefulWidget {
 class _MainScaffoldState extends State<MainScaffold> {
   int _selectedIndex = 0;
 
-  final List<Widget> _pages = const [
-    HomePage(),
-    ReservationsPage(),
-    ProfilePage(),
+  final List<Widget> _pages = [
+    const HomePage(),
+    const ReservationsPage(),
+    BlocProvider(
+      create: (context) => ChatbotBloc(GetIt.instance<ApiClient>()),
+      child: const ChatbotPage(),
+    ),
+    const ProfilePage(),
   ];
 
   void _onItemTapped(int index) {
@@ -45,6 +55,11 @@ class _MainScaffoldState extends State<MainScaffold> {
             icon: Icon(Icons.calendar_today_outlined),
             selectedIcon: Icon(Icons.calendar_today),
             label: 'Reservations',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.smart_toy_outlined),
+            selectedIcon: Icon(Icons.smart_toy),
+            label: 'AI Assistant',
           ),
           NavigationDestination(
             icon: Icon(Icons.person_outline),

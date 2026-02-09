@@ -4,13 +4,14 @@ import 'package:get_it/get_it.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'core/api/api_client.dart';
+import 'core/services/location_service.dart';
+import 'core/widgets/main_scaffold.dart';
 import 'features/auth/bloc/auth_bloc.dart';
 import 'features/auth/pages/login_page.dart';
 import 'features/parking/bloc/parking_bloc.dart';
-import 'features/reservations/bloc/reservation_bloc.dart';
 import 'features/parking/pages/home_page.dart';
 import 'features/parking/pages/lot_detail_page.dart';
-import 'core/widgets/main_scaffold.dart';
+import 'features/reservations/bloc/reservation_bloc.dart';
 
 final getIt = GetIt.instance;
 
@@ -21,6 +22,7 @@ void main() async {
   final prefs = await SharedPreferences.getInstance();
   getIt.registerSingleton<SharedPreferences>(prefs);
   getIt.registerSingleton<ApiClient>(ApiClient(prefs));
+  getIt.registerSingleton<LocationService>(LocationService());
 
   runApp(const MyApp());
 }
@@ -33,9 +35,7 @@ class MyApp extends StatelessWidget {
     return MultiBlocProvider(
       providers: [
         BlocProvider(
-          create: (context) =>
-              AuthBloc(getIt<ApiClient>(), getIt<SharedPreferences>())
-                ..add(CheckAuthStatus()),
+          create: (context) => AuthBloc(getIt<ApiClient>(), getIt<SharedPreferences>())..add(CheckAuthStatus()),
         ),
         BlocProvider(create: (context) => ParkingBloc(getIt<ApiClient>())),
         BlocProvider(create: (context) => ReservationBloc(getIt<ApiClient>())),

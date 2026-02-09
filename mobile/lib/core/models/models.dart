@@ -1,5 +1,7 @@
 import 'package:equatable/equatable.dart';
 
+export 'chatbot_models.dart';
+
 class ParkingLot extends Equatable {
   final String id;
   final String name;
@@ -43,12 +45,10 @@ class ParkingLot extends Equatable {
     );
   }
 
-  double get occupancyRate =>
-      totalSlots > 0 ? (totalSlots - availableSlots) / totalSlots : 0.0;
+  double get occupancyRate => totalSlots > 0 ? (totalSlots - availableSlots) / totalSlots : 0.0;
 
   @override
-  List<Object?> get props =>
-      [id, name, availableSlots, totalSlots, trafficCondition, isBestMatch];
+  List<Object?> get props => [id, name, availableSlots, totalSlots, trafficCondition, isBestMatch];
 }
 
 class ParkingSlot extends Equatable {
@@ -72,9 +72,7 @@ class ParkingSlot extends Equatable {
       slotNumber: json['slotNumber'],
       status: json['status'],
       confidence: (json['confidence'] ?? 0).toDouble(),
-      lastDetectedAt: json['lastDetectedAt'] != null
-          ? DateTime.parse(json['lastDetectedAt'])
-          : null,
+      lastDetectedAt: json['lastDetectedAt'] != null ? DateTime.parse(json['lastDetectedAt']) : null,
     );
   }
 
