@@ -146,7 +146,7 @@ router.put('/:id', authenticate, authorize('admin'), async (req, res, next) => {
             { returnDocument: 'after' }
         );
 
-        if (!result.value) {
+        if (!result) {
             return res.status(404).json({
                 success: false,
                 message: 'Parking lot not found'
@@ -155,7 +155,7 @@ router.put('/:id', authenticate, authorize('admin'), async (req, res, next) => {
 
         res.json({
             success: true,
-            data: result.value
+            data: result
         });
     } catch (error) {
         next(error);
